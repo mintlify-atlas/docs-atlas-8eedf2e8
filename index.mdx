@@ -1,97 +1,65 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Mastercad Backend API"
+description: "AI-powered fintech company intelligence — firmographic data, market research reports, and presentation generation via a single REST API."
 ---
 
-## Setting up
+The Mastercad Backend API gives you programmatic access to a curated database of fintech companies, AI-generated market research reports, and one-click presentation exports. Authenticate once with a Supabase JWT token, then query companies, generate reports, and export to PPTX or Gamma — all through clean REST endpoints.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Make your first API call in under five minutes
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Get your JWT token and authenticate requests
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="API Reference" icon="code" href="/api-reference/overview">
+    Explore every endpoint with request and response examples
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/architecture">
+    Understand the data model, agents, and architecture
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do
 
-Everything you need to create world-class documentation.
+<CardGroup cols={3}>
+  <Card title="Query companies" icon="building" href="/api-reference/companies">
+    Search, filter, and retrieve firmographic profiles from a curated fintech database
+  </Card>
+  <Card title="Generate reports" icon="chart-bar" href="/api-reference/market-research">
+    Produce AI-written market research reports for any topic or set of companies
+  </Card>
+  <Card title="Export presentations" icon="file-powerpoint" href="/api-reference/market-research">
+    Download PPTX files or publish directly to Gamma with presigned URLs
+  </Card>
+  <Card title="Enrich data" icon="database" href="/api-reference/companies">
+    Trigger firmographic enrichment to fill missing fields on existing companies
+  </Card>
+  <Card title="Classify companies" icon="tags" href="/concepts/ai-agents">
+    Automatic fintech category and subcategory tagging using GPT-4o
+  </Card>
+  <Card title="VC portfolio extraction" icon="briefcase" href="/api-reference/market-research">
+    Extract portfolio companies from any venture capital website
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Get started in minutes
 
-## Need inspiration?
+<Steps>
+  <Step title="Obtain a JWT token">
+    Call `POST /v1/auth/login` with your email and password to receive a Supabase access token.
+  </Step>
+  <Step title="Set the Authorization header">
+    Include `Authorization: Bearer <your_token>` on every subsequent request.
+  </Step>
+  <Step title="Query companies">
+    Call `POST /v1/companies/filter` with optional filters to retrieve a paginated list of fintech companies.
+  </Step>
+  <Step title="Generate a market research report">
+    Call `POST /v1/market-research` with a topic and up to five company IDs to produce an AI-written report.
+  </Step>
+</Steps>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+  The API base URL is `http://localhost:8000` for local development. All endpoints are prefixed with `/v1`.
+</Note>

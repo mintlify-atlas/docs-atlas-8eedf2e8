@@ -1,0 +1,240 @@
+---
+title: "Response format"
+description: "Every response from the Mastercad Backend API uses the same StandardResponse envelope. Learn its structure, error codes, and pagination fields."
+---
+
+Every endpoint — whether successful or not — returns the same JSON envelope: `StandardResponse`. This makes it straightforward to handle responses uniformly in any client.
+
+## StandardResponse envelope
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "meta": {
+    "request_id": "a3f1c2d4-...",
+    "timestamp": "2024-06-01T12:00:00Z",
+    "processing_time_ms": 87
+  },
+  "errors": null
+}
+```
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the request was handled without error. `false` on any failure, including validation errors, HTTP errors, and internal server errors.
+</ResponseField>
+
+<ResponseField name="data" type="object | array | null">
+  The response payload. Shape varies per endpoint. `null` on error.
+</ResponseField>
+
+<ResponseField name="meta" type="object | null">
+  Request metadata. Present on most responses.
+
+  <Expandable title="meta properties">
+    <ResponseField name="request_id" type="string">
+      Unique identifier for the request. Use this when reporting issues.
+    </ResponseField>
+    <ResponseField name="timestamp" type="string">
+      UTC timestamp in ISO 8601 format at the time the response was generated.
+    </ResponseField>
+    <ResponseField name="processing_time_ms" type="integer">
+      Server-side processing time in milliseconds. Also available as the `X-Process-Time` response header (in seconds).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="errors" type="array | null">
+  `null` on success. An array of error objects on failure.
+
+  <Expandable title="error object properties">
+    <ResponseField name="code" type="string">
+      Machine-readable error code. See [error codes](#error-codes) below.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable description of the error.
+    </ResponseField>
+    <ResponseField name="status_code" type="integer">
+      HTTP status code associated with this error. Present on `HTTP_ERROR` responses.
+    </ResponseField>
+    <ResponseField name="loc" type="array">
+      Path to the invalid field. Present on `VALIDATION_ERROR` responses only (e.g., `["body", "company_ids"]`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Response headers
+
+| Header | Description |
+|---|---|
+| `X-Process-Time` | Total server-side processing time in seconds (floating-point). |
+
+## Error response
+
+When a request fails, `success` is `false`, `data` is `null`, and `errors` contains one or more error objects.
+
+```json
+{
+  "success": false,
+  "data": null,
+  "meta": {
+    "request_id": "b7e2d1f3-9c4a-4b8e-a12f-3c7d9e0f1a2b",
+    "timestamp": "2024-06-01T12:00:00Z",
+    "processing_time_ms": 12
+  },
+  "errors": [
+    {
+      "code": "HTTP_ERROR",
+      "message": "Company with id 9999 not found",
+      "status_code": 404
+    }
+  ]
+}
+```
+
+Validation errors (HTTP 422) include the field location:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "meta": {
+    "request_id": "c1a2b3d4-...",
+    "timestamp": "2024-06-01T12:01:00Z"
+  },
+  "errors": [
+    {
+      "code": "VALIDATION_ERROR",
+      "message": "List should have at least 1 item after validation, not 0",
+      "loc": ["body", "company_ids"]
+    }
+  ]
+}
+```
+
+## Error codes
+
+| Code | Trigger | Typical HTTP status |
+|---|---|---|
+| `HTTP_ERROR` | Any raised `HTTPException` | 400, 401, 404, 429, 503 |
+| `INTERNAL_ERROR` | Unhandled server exception | 500 |
+| `VALIDATION_ERROR` | Request body or parameter fails Pydantic validation | 422 |
+
+## HTTP status codes
+
+| Code | Meaning |
+|---|---|
+| `200` | Request succeeded |
+| `400` | Bad request — invalid parameters or business rule violation |
+| `401` | Unauthorized — missing or invalid JWT token |
+| `404` | Resource not found |
+| `422` | Unprocessable entity — request body failed schema validation |
+| `429` | Too many requests — monthly report limit reached |
+| `500` | Internal server error |
+| `503` | Service unavailable — upstream dependency (e.g., Forager API) unreachable |
+
+## Pagination
+
+List endpoints return pagination fields directly inside `data`:
+
+```json
+{
+  "success": true,
+  "data": {
+    "companies": [ ... ],
+    "total": 4821,
+    "page": 1,
+    "page_size": 50,
+    "total_pages": 97
+  },
+  "meta": { ... },
+  "errors": null
+}
+```
+
+<ResponseField name="data.total" type="integer">
+  Total number of records matching the current filters, across all pages.
+</ResponseField>
+
+<ResponseField name="data.page" type="integer">
+  Current page number (1-indexed).
+</ResponseField>
+
+<ResponseField name="data.page_size" type="integer">
+  Number of records returned per page. Configurable in the request body (1–1000, default 50).
+</ResponseField>
+
+<ResponseField name="data.total_pages" type="integer">
+  Total number of pages available given the current `page_size`.
+</ResponseField>
+
+## Examples
+
+### Successful company filter
+
+```bash
+curl --request POST \
+  --url http://localhost:8000/v1/companies/filter \
+  --header 'Authorization: Bearer <your_jwt_token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "location_continent": "North America",
+    "page": 1,
+    "page_size": 10
+  }'
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "companies": [
+      {
+        "id": 42,
+        "name": "Acme Payments",
+        "domain": "acmepayments.com",
+        "operating_status": "active",
+        "employees_range": "51-200",
+        "location_continent": "North America"
+      }
+    ],
+    "total": 1203,
+    "page": 1,
+    "page_size": 10,
+    "total_pages": 121
+  },
+  "meta": {
+    "request_id": "d4e5f6a7-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
+    "timestamp": "2024-06-01T12:00:00Z",
+    "processing_time_ms": 54
+  },
+  "errors": null
+}
+```
+
+### 404 not found error
+
+```bash
+curl --request GET \
+  --url http://localhost:8000/v1/companies/9999 \
+  --header 'Authorization: Bearer <your_jwt_token>'
+```
+
+```json
+{
+  "success": false,
+  "data": null,
+  "meta": {
+    "request_id": "e5f6a7b8-2c3d-4e5f-6a7b-8c9d0e1f2a3b",
+    "timestamp": "2024-06-01T12:00:01Z",
+    "processing_time_ms": 8
+  },
+  "errors": [
+    {
+      "code": "HTTP_ERROR",
+      "message": "Company with id 9999 not found",
+      "status_code": 404
+    }
+  ]
+}
+```

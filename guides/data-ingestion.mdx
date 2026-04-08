@@ -1,0 +1,269 @@
+---
+title: 'Data ingestion'
+description: 'How to populate the Mastercad company database using the discovery pipeline, API endpoints, and VC portfolio extraction.'
+keywords: ['data ingestion', 'discovery', 'forager', 'enrichment', 'companies', 'pipeline']
+---
+
+The company database is populated through several complementary paths: automated discovery from
+Forager, manual addition via the REST API, and VC portfolio extraction. This guide covers each
+approach.
+
+---
+
+## Automated discovery
+
+The `discovery` command calls the Forager API to fetch fintech company firmographics and upserts
+them into the database. It is the primary bulk-ingestion path.
+
+### Run discovery locally
+
+```bash
+docker compose exec app python3 scripts/run_dev.py --command discovery --limit 10
+```
+
+The `--limit` flag controls the maximum number of company records to fetch in a single run.
+Omitting it uses the default of 5.
+
+### Forager integration
+
+Forager provides structured firmographic data for companies matching configured filters. The
+`discovery` command applies the following filters by default:
+
+| Filter | Default values |
+| ------ | -------------- |
+| Industries | Financial Services (43), Banking (11), Information Technology and Services (64), Computer Software (25), Internet (68) |
+| Keywords | Fintech (1447) |
+| Locations | North America (394868) |
+| Funding types | All stages from pre-seed through series J, plus PE, debt, equity crowdfunding, and undisclosed |
+
+These defaults are defined in `core/config.py` and `scripts/discovery.py`. You can override them
+at runtime by passing a JSON event payload:
+
+```bash
+docker compose exec app python3 scripts/run_dev.py \
+  --command discovery \
+  --limit 50 \
+  --event '{"industries": [43], "keywords": [1447]}'
+```
+
+---
+
+## Processing pipeline
+
+After discovery, each company moves through a sequential processing pipeline. Run it with the
+`process` command:
+
+```bash
+docker compose exec app python3 scripts/run_dev.py --command process --limit 20
+```
+
+<Steps>
+  <Step title="Discovery">
+    Forager API is queried for companies matching the configured industry, keyword, and funding
+    filters. Records are upserted (inserted or updated) into the `companies` table.
+  </Step>
+
+  <Step title="Save">
+    Raw firmographic data from Forager is persisted to the database, including name, website,
+    country, funding stage, and employee count.
+  </Step>
+
+  <Step title="Translate">
+    Company descriptions are translated to the target language using the DeepL API. Requires
+    `DEEPL_API_KEY` to be set.
+
+    Run translation only:
+
+    ```bash
+    docker compose exec app python3 scripts/run_dev.py \
+      --command process \
+      --event '{"steps": ["translate"], "limit": 50}'
+    ```
+  </Step>
+
+  <Step title="Enrich">
+    AI agents augment each company record with additional data: leadership information, product
+    summary, and technology stack. This step calls OpenAI and Perplexity.
+  </Step>
+
+  <Step title="Classify">
+    Each company is assigned a fintech category and subcategory from the master taxonomy (e.g.,
+    `Payments > Card Payments`, `Digital Banking > Banking as a service`).
+
+    Run classification for a specific company:
+
+    ```bash
+    docker compose exec app python3 scripts/run_dev.py \
+      --command classifier \
+      --company-id 42
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Firmographic enrichment via API
+
+You can trigger enrichment for one or more existing companies using the REST API.
+
+**Endpoint:** `POST /v1/companies/enrich`
+
+Provide either `company_ids` (a list of specific IDs) or `id_range` (an inclusive start–end range). At least one is required.
+
+```json
+{
+  "company_ids": [42, 43],
+  "fields": ["employees_range", "revenue", "linkedin_industry"]
+}
+```
+
+Or enrich by ID range:
+
+```json
+{
+  "id_range": { "start": 100, "end": 200 }
+}
+```
+
+The `fields` array is optional — omit it to update all available firmographic fields.
+
+See [POST /v1/companies/enrich](/api-reference/companies#post-v1companiesenrich) for the full schema and response format.
+
+---
+
+## Adding a company manually
+
+Add a single company by providing its website URL. The backend searches Forager for the company, saves it to the database, and queues background processing (translation, location extraction, and classification). The endpoint responds immediately.
+
+**Endpoint:** `POST /v1/companies/add`
+
+```json
+{
+  "website": "https://www.acmepayments.com",
+  "name": "Acme Payments"
+}
+```
+
+The `name` field is optional but improves Forager search accuracy. `website` is required.
+
+**Example response (company found):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "found": true,
+    "company": {
+      "id": 157,
+      "name": "Acme Payments",
+      "website": "https://www.acmepayments.com",
+      "domain": "acmepayments.com",
+      "created_at": "2026-04-08T10:00:00Z",
+      "updated_at": "2026-04-08T10:00:00Z"
+    },
+    "message": "Company added (ID: 157). Processing in background."
+  },
+  "errors": null
+}
+```
+
+**Example response (company not found):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "found": false,
+    "company": null,
+    "message": "Company not found"
+  },
+  "errors": null
+}
+```
+
+<Note>
+  When `found` is `true`, background processing (translation, location extraction, category classification) is queued and runs after the response is returned. The company record will be fully enriched within a few seconds.
+</Note>
+
+---
+
+## VC portfolio extraction
+
+Extract and ingest the portfolio companies of a venture capital firm using Playwright-based web
+scraping. This endpoint is only available when running on the ECS image (`Dockerfile.ecs`), which
+includes crawl4ai and Playwright.
+
+**Endpoint:** `POST /v1/market-research/vc-fintech-extraction`
+
+Provide the VC firm's main website URL. The endpoint maps the site structure, finds the portfolio page, and parses company names and URLs.
+
+```json
+{
+  "vc_url": "https://www.sequoiacap.com"
+}
+```
+
+**Example response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "portfolio": {
+      "vc_name": "Sequoia Capital",
+      "vc_url": "https://www.sequoiacap.com",
+      "companies": [
+        { "name": "Stripe", "url": "https://stripe.com" },
+        { "name": "Klarna", "url": "https://www.klarna.com" }
+      ],
+      "total_companies_found": 2
+    },
+    "metadata": {
+      "vc_url": "https://www.sequoiacap.com",
+      "total_companies": 2,
+      "timestamp": "2026-04-08T14:00:00.000000"
+    }
+  },
+  "errors": null
+}
+```
+
+<Warning>
+  VC portfolio extraction uses a headless Chromium browser and can take several minutes depending on
+  the size of the portfolio page. Ensure the ECS task has sufficient memory (at least 2 GB
+  recommended) and that the `FORAGER_API_KEY` is configured for subsequent enrichment.
+</Warning>
+
+---
+
+## Available ETL commands
+
+The `run_dev.py` script exposes the following commands via `--command`:
+
+| Command | Description |
+| ------- | ----------- |
+| `discovery` | Fetch companies from Forager and upsert to the database |
+| `process` | Run the translate → enrich → classify pipeline on pending companies |
+| `classifier` | Classify a single company by `--company-id` |
+| `translate` | Translate company descriptions using DeepL |
+| `refresh_forager` | Re-sync existing company records with fresh Forager data |
+| `test_connection` | Verify database and external API connectivity |
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Companies API" icon="building" href="/api-reference/companies">
+    Explore all company endpoints including search and filtering.
+  </Card>
+  <Card title="Market research API" icon="chart-bar" href="/api-reference/market-research">
+    VC extraction and competitive landscape endpoints.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/guides/configuration">
+    Configure Forager, OpenAI, and DeepL credentials.
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/guides/deployment">
+    Run the ECS image to enable browser-based scraping.
+  </Card>
+</CardGroup>

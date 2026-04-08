@@ -1,0 +1,830 @@
+---
+title: "Companies"
+description: "Query, filter, enrich, and add fintech company profiles."
+---
+
+All endpoints in this group require a valid Bearer token unless noted otherwise.
+
+```
+Authorization: Bearer <your_access_token>
+```
+
+---
+
+## GET /v1/companies
+
+Return all companies in the database without any filtering. Useful for small datasets or initial data loads. For production use, prefer `POST /v1/companies/filter` to paginate results.
+
+**Authentication:** Bearer token required
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Paginated list of companies.
+
+  <Expandable title="data">
+    <ResponseField name="companies" type="Company[]" required>
+      Array of company objects. See the [Company object](#company-object) below.
+    </ResponseField>
+    <ResponseField name="total" type="integer" required>
+      Total number of companies matching the query.
+    </ResponseField>
+    <ResponseField name="page" type="integer" required>
+      Current page number.
+    </ResponseField>
+    <ResponseField name="page_size" type="integer" required>
+      Number of results per page.
+    </ResponseField>
+    <ResponseField name="total_pages" type="integer" required>
+      Total number of available pages.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8000/v1/companies \
+  -H "Authorization: Bearer <your_access_token>"
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "companies": [
+      {
+        "id": 1,
+        "name": "Stripe",
+        "website": "https://stripe.com",
+        "domain": "stripe.com",
+        "description": "Online payment processing for internet businesses.",
+        "employees_range": "1000 - 5000",
+        "location_continent": "North America",
+        "is_fintech": true,
+        "created_at": "2024-01-15T10:00:00Z",
+        "updated_at": "2026-03-01T08:30:00Z"
+      }
+    ],
+    "total": 1842,
+    "page": 1,
+    "page_size": 50,
+    "total_pages": 37
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## POST /v1/companies/filter
+
+Filter and paginate companies by one or more criteria. Supports text search, category filtering, geography, employee count, funding type, and keyword matching.
+
+**Authentication:** Bearer token required
+
+### Request body
+
+<ParamField body="search" type="string">
+  Free-text search across company name, domain, subcategory, and keywords. Minimum 2 characters. Automatically detects domain format (e.g. `stripe.com`).
+</ParamField>
+
+<ParamField body="categories" type="integer[]">
+  List of category IDs to filter by. Retrieve available IDs from `GET /v1/companies/filter`.
+</ParamField>
+
+<ParamField body="subcategories" type="integer[]">
+  List of subcategory IDs to filter by.
+</ParamField>
+
+<ParamField body="keyword_ids" type="integer[]">
+  List of keyword IDs to filter by. Search for keywords by name using `GET /v1/companies/keywords/search`.
+</ParamField>
+
+<ParamField body="country_ids" type="integer[]">
+  List of country IDs to filter by. Matches companies with a headquarters or office in any of the specified countries.
+</ParamField>
+
+<ParamField body="employees_range" type="string">
+  Employee headcount band (e.g. `"50 - 200"`). Valid values returned by `GET /v1/companies/filter`.
+</ParamField>
+
+<ParamField body="funding_types" type="string[]">
+  List of funding round types to include (e.g. `["Series A", "Series B"]`).
+</ParamField>
+
+<ParamField body="location_continent" type="string">
+  Filter by continent (e.g. `"Europe"`, `"North America"`).
+</ParamField>
+
+<ParamField body="origin_source_id" type="integer[]">
+  List of data source IDs to filter by (1 = Forager, 2 = VC Scraper, 3 = Blumb, 4 = Mastercard).
+</ParamField>
+
+<ParamField body="page" type="integer" default="1">
+  Page number to retrieve. Starts at 1.
+</ParamField>
+
+<ParamField body="page_size" type="integer" default="50">
+  Number of results per page. Maximum 1000.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Filtered and paginated company list.
+
+  <Expandable title="data">
+    <ResponseField name="companies" type="Company[]" required>
+      Array of matching company objects. See the [Company object](#company-object) below.
+    </ResponseField>
+    <ResponseField name="total" type="integer" required>
+      Total number of companies matching the applied filters.
+    </ResponseField>
+    <ResponseField name="page" type="integer" required>
+      Current page number.
+    </ResponseField>
+    <ResponseField name="page_size" type="integer" required>
+      Page size used for this response.
+    </ResponseField>
+    <ResponseField name="total_pages" type="integer" required>
+      Total number of pages available for the current filter set.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl -X POST http://localhost:8000/v1/companies/filter \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "search": "payments",
+    "categories": [3],
+    "location_continent": "Europe",
+    "employees_range": "50 - 200",
+    "page": 1,
+    "page_size": 20
+  }'
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "companies": [
+      {
+        "id": 42,
+        "name": "Mollie",
+        "website": "https://www.mollie.com",
+        "domain": "mollie.com",
+        "description": "Payment service provider for European businesses.",
+        "employees_range": "50 - 200",
+        "location_continent": "Europe",
+        "is_fintech": true,
+        "created_at": "2024-02-10T09:00:00Z",
+        "updated_at": "2026-03-15T11:00:00Z"
+      }
+    ],
+    "total": 87,
+    "page": 1,
+    "page_size": 20,
+    "total_pages": 5
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/companies/filter
+
+Return all available filter option values — categories with their subcategories, employee ranges, continents, funding types, countries, and data sources. Use these values to populate filter UIs or validate filter inputs before calling `POST /v1/companies/filter`.
+
+**Authentication:** Bearer token required
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8000/v1/companies/filter \
+  -H "Authorization: Bearer <your_access_token>"
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "categories": [
+      {
+        "id": 3,
+        "name": "Payments",
+        "subcategories": [
+          { "id": 12, "name": "Payment Processing" },
+          { "id": 13, "name": "Cross-border Payments" }
+        ]
+      }
+    ],
+    "employees_range": ["1 - 10", "11 - 50", "50 - 200", "200 - 500", "500 - 1000", "1000 - 5000"],
+    "location_continent": ["Africa", "Asia", "Europe", "North America", "South America", "Oceania"],
+    "funding_types": ["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Growth Equity"],
+    "countries": [
+      { "id": 1, "code": "US", "name": "United States" },
+      { "id": 2, "code": "GB", "name": "United Kingdom" }
+    ]
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/companies/keywords/search
+
+Search for keywords by partial name for autocomplete. Returns matching keyword objects with IDs that can be passed to `POST /v1/companies/filter`.
+
+**Authentication:** Bearer token required
+
+### Query parameters
+
+<ParamField query="q" type="string" required>
+  Search string. Minimum 2 characters.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Maximum number of results to return.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the request succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object[]" required>
+  Array of matching keyword objects.
+
+  <Expandable title="Keyword object">
+    <ResponseField name="id" type="integer" required>
+      Keyword ID to use in filter requests.
+    </ResponseField>
+    <ResponseField name="name" type="string" required>
+      Human-readable keyword label.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl "http://localhost:8000/v1/companies/keywords/search?q=block&limit=5" \
+  -H "Authorization: Bearer <your_access_token>"
+```
+
+```json Response
+{
+  "success": true,
+  "data": [
+    { "id": 88, "name": "blockchain" },
+    { "id": 102, "name": "block payment" }
+  ],
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/companies/{company_id}
+
+Return the full detail profile of a single company by its internal ID, including funding history, investors, and office locations.
+
+**Authentication:** Bearer token required
+
+### Path parameters
+
+<ParamField path="company_id" type="integer" required>
+  Internal company ID.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the company was found.
+</ResponseField>
+
+<ResponseField name="data" type="CompanyDetail" required>
+  Extended company profile. Includes all [Company object](#company-object) fields plus the following.
+
+  <Expandable title="CompanyDetail additional fields">
+    <ResponseField name="investment_raised" type="number">
+      Total capital raised across all funding rounds.
+    </ResponseField>
+    <ResponseField name="investment_stage" type="string">
+      Current funding stage derived from the most recent round (e.g. `"Series B"`).
+    </ResponseField>
+    <ResponseField name="last_round" type="FundingRound">
+      Most recent funding round.
+
+      <Expandable title="FundingRound">
+        <ResponseField name="id" type="integer">Funding round ID.</ResponseField>
+        <ResponseField name="company_id" type="integer">Parent company ID.</ResponseField>
+        <ResponseField name="source" type="string">Data source for this round.</ResponseField>
+        <ResponseField name="funding_type" type="string">Round type (e.g. `"Series A"`).</ResponseField>
+        <ResponseField name="amount" type="number">Amount raised in USD.</ResponseField>
+        <ResponseField name="featured_date" type="string">Date the round was announced (ISO 8601 date).</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="origin_source" type="object">
+      Data source that originally provided this company record.
+
+      <Expandable title="Source">
+        <ResponseField name="id" type="integer">Source ID.</ResponseField>
+        <ResponseField name="name" type="string">Source name (e.g. `"Forager"`).</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="investors" type="Investor[]">
+      List of known investors in this company.
+
+      <Expandable title="Investor">
+        <ResponseField name="id" type="integer">Investor ID.</ResponseField>
+        <ResponseField name="name" type="string">Investor name.</ResponseField>
+        <ResponseField name="website" type="string">Investor website URL.</ResponseField>
+        <ResponseField name="type" type="string">Investor type (e.g. `"Venture Capital"`).</ResponseField>
+        <ResponseField name="global_hq" type="string">Headquarters location.</ResponseField>
+        <ResponseField name="countries_investment" type="string">Countries the investor is active in.</ResponseField>
+        <ResponseField name="description" type="string">Brief description of the investor.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="offices" type="CompanyOffice[]">
+      List of office locations. The headquarters has `office_type` = `"hq"`.
+
+      <Expandable title="CompanyOffice">
+        <ResponseField name="id" type="integer">Office ID.</ResponseField>
+        <ResponseField name="office_type" type="string">Office type (`"hq"`, `"branch"`, etc.).</ResponseField>
+        <ResponseField name="city" type="string">City.</ResponseField>
+        <ResponseField name="state" type="string">State or province.</ResponseField>
+        <ResponseField name="street_address" type="string">Street address.</ResponseField>
+        <ResponseField name="postcode" type="string">Postal code.</ResponseField>
+        <ResponseField name="country" type="object">
+          Country information.
+          <Expandable title="Country">
+            <ResponseField name="id" type="integer">Country ID.</ResponseField>
+            <ResponseField name="code" type="string">ISO 3166-1 alpha-2 country code.</ResponseField>
+            <ResponseField name="name" type="string">Country name.</ResponseField>
+            <ResponseField name="region" type="string">Geographic region.</ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8000/v1/companies/42 \
+  -H "Authorization: Bearer <your_access_token>"
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "id": 42,
+    "name": "Mollie",
+    "website": "https://www.mollie.com",
+    "domain": "mollie.com",
+    "description": "Payment service provider for European businesses.",
+    "employees_range": "50 - 200",
+    "location_continent": "Europe",
+    "is_fintech": true,
+    "investment_raised": 800000000,
+    "investment_stage": "Series C",
+    "last_round": {
+      "id": 7,
+      "company_id": 42,
+      "source": "Forager",
+      "funding_type": "Series C",
+      "amount": 665000000,
+      "featured_date": "2021-09-02"
+    },
+    "origin_source": { "id": 1, "name": "Forager" },
+    "investors": [
+      {
+        "id": 5,
+        "name": "General Atlantic",
+        "website": "https://www.generalatlantic.com",
+        "type": "Venture Capital"
+      }
+    ],
+    "offices": [
+      {
+        "id": 1,
+        "office_type": "hq",
+        "city": "Amsterdam",
+        "country": { "id": 155, "code": "NL", "name": "Netherlands", "region": "Europe" }
+      }
+    ],
+    "created_at": "2024-02-10T09:00:00Z",
+    "updated_at": "2026-03-15T11:00:00Z"
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## POST /v1/companies/enrich
+
+Trigger firmographic enrichment for one or more companies. Fetches updated data for the specified fields from external sources and writes the results back to the database.
+
+**Authentication:** Bearer token required
+
+<Info>
+  Provide either `company_ids` (a list of specific IDs) or `id_range` (an inclusive start–end range). At least one is required.
+</Info>
+
+### Request body
+
+<ParamField body="company_ids" type="integer[]">
+  List of internal company IDs to enrich. Can be combined with `id_range`.
+</ParamField>
+
+<ParamField body="id_range" type="object">
+  Inclusive range of company IDs to enrich.
+
+  <Expandable title="id_range">
+    <ParamField body="start" type="integer" required>
+      First company ID in the range (≥ 1).
+    </ParamField>
+    <ParamField body="end" type="integer" required>
+      Last company ID in the range (≥ start).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="fields" type="string[]">
+  Subset of firmographic fields to update. When omitted or empty, all available fields are updated. Example: `["employees_range", "revenue", "linkedin_industry"]`.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the enrichment job was accepted and completed.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Enrichment result summary returned by the enrichment agent.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Enrich specific IDs
+curl -X POST http://localhost:8000/v1/companies/enrich \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "company_ids": [42, 43, 44],
+    "fields": ["employees_range", "revenue"]
+  }'
+```
+
+```bash Enrich by ID range
+curl -X POST http://localhost:8000/v1/companies/enrich \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id_range": { "start": 100, "end": 200 }
+  }'
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "enriched": 3,
+    "failed": 0,
+    "skipped": 0
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## POST /v1/companies/add
+
+Search for a company in Forager by website (and optionally name), save it to the database, then queue background processing (translation, location extraction, and classification). The endpoint responds immediately — background tasks run asynchronously.
+
+**Authentication:** Bearer token required
+
+### Request body
+
+<ParamField body="website" type="string" required>
+  Company website URL. Will be normalized to a domain before lookup (e.g. `https://stripe.com` → `stripe.com`).
+</ParamField>
+
+<ParamField body="name" type="string">
+  Optional company name to improve search accuracy. Minimum 2 characters, maximum 255.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` regardless of whether the company was found.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Search result.
+
+  <Expandable title="data">
+    <ResponseField name="found" type="boolean" required>
+      `true` if the company was found in Forager and saved to the database.
+    </ResponseField>
+    <ResponseField name="company" type="Company">
+      The saved company object when `found` is `true`. `null` when not found. See [Company object](#company-object).
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable status message (e.g. `"Company added (ID: 42). Processing in background."`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl -X POST http://localhost:8000/v1/companies/add \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mollie",
+    "website": "https://www.mollie.com"
+  }'
+```
+
+```json Company found
+{
+  "success": true,
+  "data": {
+    "found": true,
+    "company": {
+      "id": 42,
+      "name": "Mollie",
+      "website": "https://www.mollie.com",
+      "domain": "mollie.com",
+      "created_at": "2026-04-08T10:00:00Z",
+      "updated_at": "2026-04-08T10:00:00Z"
+    },
+    "message": "Company added (ID: 42). Processing in background."
+  },
+  "errors": null
+}
+```
+
+```json Company not found
+{
+  "success": true,
+  "data": {
+    "found": false,
+    "company": null,
+    "message": "Company not found"
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+<Note>
+  When `found` is `true`, background processing (translation, location extraction, category classification) is queued and runs after the response is returned. The company record will be complete within a few seconds.
+</Note>
+
+---
+
+## POST /v1/companies/suggest-research-topic
+
+Analyze a set of companies and use AI to suggest a relevant market research topic based on their descriptions and keywords. Use this to pre-fill the topic field before calling `POST /v1/market-research`.
+
+**Authentication:** Bearer token required
+
+### Request body
+
+<ParamField body="company_ids" type="integer[]" required>
+  List of 1–20 internal company IDs to analyze.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when a topic was successfully generated.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  AI-generated topic suggestion.
+
+  <Expandable title="data">
+    <ResponseField name="suggested_topic" type="string" required>
+      AI-suggested research topic derived from the provided companies.
+    </ResponseField>
+    <ResponseField name="companies_analyzed" type="integer" required>
+      Number of companies used to generate the suggestion.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl -X POST http://localhost:8000/v1/companies/suggest-research-topic \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "company_ids": [1, 42, 88]
+  }'
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "suggested_topic": "European B2B payment infrastructure and embedded finance",
+    "companies_analyzed": 3
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## Company object
+
+The following fields are present on every `Company` object returned by this group of endpoints.
+
+<ResponseField name="id" type="integer" required>
+  Internal company ID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Company display name.
+</ResponseField>
+
+<ResponseField name="website" type="string">
+  Full website URL.
+</ResponseField>
+
+<ResponseField name="domain" type="string">
+  Normalized domain (e.g. `"stripe.com"`).
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL to the company logo image.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Full company description.
+</ResponseField>
+
+<ResponseField name="short_description" type="string">
+  Brief one-line summary.
+</ResponseField>
+
+<ResponseField name="operating_status" type="string">
+  Operational status (e.g. `"active"`, `"acquired"`, `"closed"`).
+</ResponseField>
+
+<ResponseField name="founded_date" type="string">
+  Date the company was founded (ISO 8601 date, e.g. `"2010-01-01"`).
+</ResponseField>
+
+<ResponseField name="employees_range" type="string">
+  Headcount band (e.g. `"50 - 200"`).
+</ResponseField>
+
+<ResponseField name="employees_amount" type="integer">
+  Exact employee count when available.
+</ResponseField>
+
+<ResponseField name="location_text" type="string">
+  Free-text location string.
+</ResponseField>
+
+<ResponseField name="location_continent" type="string">
+  Continent name.
+</ResponseField>
+
+<ResponseField name="revenue" type="number">
+  Annual revenue in USD.
+</ResponseField>
+
+<ResponseField name="is_fintech" type="boolean">
+  `true` if the company is classified as a fintech.
+</ResponseField>
+
+<ResponseField name="is_bank" type="boolean">
+  `true` if the company is a bank or banking institution.
+</ResponseField>
+
+<ResponseField name="linkedin_profile_url" type="string">
+  LinkedIn company profile URL.
+</ResponseField>
+
+<ResponseField name="linkedin_industry" type="string">
+  Industry category as reported on LinkedIn.
+</ResponseField>
+
+<ResponseField name="revenue_models" type="string">
+  Business model description.
+</ResponseField>
+
+<ResponseField name="customer_category" type="string">
+  Primary customer type (e.g. `"B2B"`, `"B2C"`).
+</ResponseField>
+
+<ResponseField name="keywords" type="Keyword[]">
+  List of associated keywords.
+
+  <Expandable title="Keyword">
+    <ResponseField name="id" type="integer">Keyword ID.</ResponseField>
+    <ResponseField name="name" type="string">Keyword label.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="funding_rounds" type="FundingRound[]">
+  List of funding rounds, most recent first.
+
+  <Expandable title="FundingRound">
+    <ResponseField name="id" type="integer">Funding round ID.</ResponseField>
+    <ResponseField name="company_id" type="integer">Parent company ID.</ResponseField>
+    <ResponseField name="source" type="string">Data source.</ResponseField>
+    <ResponseField name="funding_type" type="string">Round type.</ResponseField>
+    <ResponseField name="amount" type="number">Amount raised in USD.</ResponseField>
+    <ResponseField name="featured_date" type="string">Announcement date.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="subcategories" type="SubcategoryInfo[]">
+  Fintech subcategories this company belongs to.
+
+  <Expandable title="SubcategoryInfo">
+    <ResponseField name="id" type="integer">Subcategory ID.</ResponseField>
+    <ResponseField name="name" type="string">Subcategory name.</ResponseField>
+    <ResponseField name="category_id" type="integer">Parent category ID.</ResponseField>
+    <ResponseField name="category" type="object">
+      Parent category object.
+      <Expandable title="CategoryInfo">
+        <ResponseField name="id" type="integer">Category ID.</ResponseField>
+        <ResponseField name="name" type="string">Category name.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="origin_source_id" type="integer">
+  ID of the data source that originally provided this company.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp when the company record was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp when the company record was last updated.
+</ResponseField>

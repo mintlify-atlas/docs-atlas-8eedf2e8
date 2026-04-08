@@ -1,0 +1,264 @@
+---
+title: "AI Agents"
+description: "The multi-agent pipeline that enriches, classifies, and researches fintech companies using Perplexity Sonar and OpenAI GPT-4o."
+---
+
+The Mastercad backend uses a set of purpose-built LangGraph agents to automate data processing. Each agent is a two-node workflow: a Perplexity Sonar node for real-time web research and an OpenAI GPT-4o node for structured data extraction. All agents are instrumented with Langfuse for end-to-end LLM observability.
+
+## Company processing pipeline
+
+Raw company records from Forager go through three sequential steps before they appear in the API with full firmographic data and category tags:
+
+<Steps>
+  <Step title="Translate">
+    Non-English company descriptions are translated to English via DeepL (`DEEPL_API_KEY`) so that downstream LLM agents receive consistent input. The `translated_at` timestamp is set on the company record.
+  </Step>
+  <Step title="Enrich">
+    The Enrichment Agent queries Perplexity for up-to-date firmographic data and uses GPT-4o to extract it into structured fields. The `enriched_at` timestamp is set on completion.
+  </Step>
+  <Step title="Classify">
+    The Classifier Agent sends company context to GPT-4o and receives back an `is_fintech` flag, a list of subcategory assignments (up to 5), and a one-sentence description. The `classified_at` timestamp is set on completion.
+  </Step>
+</Steps>
+
+## Agents
+
+<AccordionGroup>
+
+  <Accordion title="Enrichment Agent">
+    **Purpose:** Fills missing firmographic fields by researching a company on the web and extracting structured data.
+
+    **Location:** `agents/enrichment/enrichment_agent.py`
+
+    **AI models:**
+    - Node 1 — Research: `sonar-deep-research` (Perplexity)
+    - Node 2 — Extraction: `gpt-4o` (OpenAI)
+
+    **Input:** A company name string.
+
+    **Output:** A `CompanyProfile` Pydantic object containing:
+
+    | Field | Description |
+    |-------|-------------|
+    | `one_liner` | One-sentence company description |
+    | `founding_year` | Year the company was founded |
+    | `investment_raised` | Total capital raised |
+    | `investment_stage` | Current stage (e.g., Series A) |
+    | `last_round` | Most recent funding round and date |
+    | `selected_investors` | List of key investors |
+    | `team_size` | Approximate headcount |
+    | `revenue_model` | Revenue model (e.g., SaaS, transaction fee) |
+    | `main_customers` | Target customer type |
+    | `founder` | Founder name(s) |
+    | `headquarters_location` | City and country |
+    | `market_presence` | Markets and geographies served |
+    | `website` | Company website URL |
+    | `topic_tags` | Tags such as `FinTech`, `AI`, `SaaS B2B` |
+
+    **Workflow:**
+
+    ```
+    [research_company_info] → [extract_structured_data] → END
+    ```
+
+    Node 1 calls Perplexity with `search_mode: web` and returns a raw text summary plus source citations. Node 2 sends that summary to GPT-4o using `with_structured_output(CompanyProfile)` to get a validated Pydantic object back.
+
+    **Observability trace name:** `enrichment_agent_workflow`
+
+    ```python
+    from agents.enrichment.enrichment_agent import create_company_research_agent
+
+    agent = create_company_research_agent()
+    result = agent.run("Stripe")
+    profile = result["profile"]   # CompanyProfile
+    sources = result["search_results"]
+    ```
+  </Accordion>
+
+  <Accordion title="Classifier Agent">
+    **Purpose:** Assigns fintech subcategories to companies and determines whether each company is a fintech.
+
+    **Location:** `agents/classifier/classifier_agent.py`
+
+    **AI model:** `gpt-4o` (OpenAI) with structured output
+
+    **Input:** A SQLAlchemy `Company` object (name, description, keywords, LinkedIn industry).
+
+    **Output:** A `CompanyClassificationResult` containing:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `company_id` | `int` | Internal company ID |
+    | `company_name` | `str` | Company name |
+    | `is_fintech` | `bool \| None` | `true` = fintech, `false` = not fintech, `null` = unknown |
+    | `subcategories` | `list[str]` | Up to 5 subcategory names from the taxonomy |
+    | `short_description` | `str` | One-sentence value proposition |
+    | `success` | `bool` | Whether classification succeeded |
+    | `error_message` | `str \| None` | Error detail if `success = false` |
+
+    The agent supports both single-company and batch classification:
+
+    ```python
+    from agents.classifier.classifier_agent import ClassifierAgent
+
+    agent = ClassifierAgent(model="gpt-4o")
+
+    # Single
+    result = agent.classify_company(company)
+
+    # Batch (uses LangChain .batch() for efficiency)
+    batch_result = agent.classify_batch(companies)
+    ```
+
+    The classifier builds a dynamic Pydantic enum from `CATEGORIES_DATA` in `core/config.py` at initialization time, so GPT-4o is constrained to return only valid subcategory names. The `is_fintech` field uses a `Literal["yes", "no", "unknown"]` type to force an explicit three-way classification.
+
+    **Observability trace names:** `classify_single_company`, `classify_batch`
+  </Accordion>
+
+  <Accordion title="Report Agent">
+    **Purpose:** Generates comprehensive multi-section market research reports for a given topic and set of companies.
+
+    **Location:** `agents/report/report_agent.py`
+
+    **AI models:**
+    - Node 1 — Research: `sonar-pro` (Perplexity)
+    - Node 2 — Extraction: `gpt-4o` (OpenAI)
+
+    **Input:**
+    - `target_market` — the industry or topic to research (e.g., `"BNPL in Latin America"`)
+    - `company_profiles` — list of company dicts with firmographic data (up to 5)
+
+    **Output:** A `FinalMarketReport` Pydantic object with the following sections:
+
+    | Section | Description |
+    |---------|-------------|
+    | `report_title` | Generated report title |
+    | `market_landscape` | Market overview, top trends (5–7), and critical challenges |
+    | `competitive_landscape` | Segmentation analysis, top 10 key players, positioning summary |
+    | `solution_analysis` | Solution categories with traditional vs. modern comparisons and case studies |
+    | `player_assessment` | Deep profiles for up to 5 companies with workflow and use-case statements |
+    | `market_opportunities` | Gaps, 3–5 year outlook, and strategic recommendations |
+    | `company_comparison` | Side-by-side table of input companies (name, employees, funding, stage) |
+    | `sources` | URLs from Perplexity search results |
+
+    **Workflow:**
+
+    ```
+    [generate_raw_report] → [extract_structured_sections] → END
+    ```
+
+    Node 1 formats all company profiles as JSON and sends a detailed prompt to Perplexity. Node 2 passes the raw text to GPT-4o using `with_structured_output(FinalMarketReport)`. Company profiles that return only `N/A` values are filtered out before the final object is returned.
+
+    **Observability trace name:** `market_report_agent_workflow`
+  </Accordion>
+
+  <Accordion title="TopFinder Agent">
+    **Purpose:** Identifies the top companies in a given market or topic using real-time web research, then validates each company's domain to filter hallucinations.
+
+    **Location:** `agents/topfinder/topfinder_agent.py`
+
+    **AI models:**
+    - Node 1 — Research: `sonar-pro` (Perplexity)
+    - Node 2 — Extraction: `gpt-4o` (OpenAI)
+
+    **Input:**
+    - `topic` — industry or market to research (e.g., `"embedded finance"`)
+    - `num_companies` — how many companies to return (1–10)
+
+    **Output:** A `TopCompaniesList` object containing a list of `CompanyListItem` entries:
+
+    | Field | Description |
+    |-------|-------------|
+    | `company_name` | Full company name |
+    | `one_liner` | Brief product or service description |
+    | `domain` | Company domain (e.g., `stripe.com`) |
+    | `founding_year` | Year founded |
+
+    **Workflow:**
+
+    ```
+    [research_top_companies] → [extract_top_companies] → [validate_companies] → END
+    ```
+
+    The third node (`validate_companies`) performs a live domain check on each extracted company. Any company whose domain does not resolve is dropped from the results, preventing hallucinated or defunct companies from appearing in the output.
+
+    **Observability trace name:** `topfinder_agent_workflow`
+
+    ```python
+    from agents.topfinder.topfinder_agent import TopFinderAgent
+
+    agent = TopFinderAgent(
+        perplexity_api_key="...",
+        openai_api_key="...",
+        perplexity_model="sonar-pro",
+        openai_model="gpt-4o",
+        top_list_model=TopCompaniesList
+    )
+    companies = agent.run(topic="open banking Europe", num_companies=5)
+    ```
+  </Accordion>
+
+  <Accordion title="Bank Classifier">
+    **Purpose:** Distinguishes pure fintech startups from traditional banks and financial institutions.
+
+    **Location:** `agents/bank_classifier/`
+
+    **AI model:** `gpt-4o` (OpenAI)
+
+    **Input:** Company context (name, description, LinkedIn industry, keywords).
+
+    **Output:** Sets `is_bank = true` on company records where the company is primarily a legacy bank rather than a technology-first fintech. This flag is used to separate the database into fintech-only and bank cohorts for downstream analysis.
+
+    <Note>
+      The `is_bank` and `is_fintech` flags are independent. A company can be both (`is_fintech = true`, `is_bank = true`) if it is a digital-native bank such as a neobank, or neither if it is a non-financial technology company that was incorrectly ingested.
+    </Note>
+  </Accordion>
+
+</AccordionGroup>
+
+## Observability with Langfuse
+
+All agents are instrumented using the `@observe` decorator from the Langfuse SDK and the `CallbackHandler` from `langfuse.langchain`. The observability layer is managed by the `ObservabilityManager` singleton in `core/observability.py`.
+
+When `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are present in the environment, every LLM call is traced automatically with:
+
+- **Input and output** for each LangGraph node
+- **Model, tokens, and latency** for every LLM invocation
+- **Tags** for grouping traces by agent type (e.g., `enrichment_agent`, `classifier`, `batch`)
+- **Session and user IDs** when passed through `langfuse_metadata`
+
+```python
+from core.observability import get_callback_handlers, get_langfuse_metadata
+
+handlers = get_callback_handlers()
+metadata = get_langfuse_metadata(
+    user_id="user_abc123",
+    session_id="session_xyz",
+    tags=["production", "enrichment_agent"]
+)
+
+result = agent.run(
+    company_name="Stripe",
+    callback_handlers=handlers,
+    langfuse_metadata=metadata
+)
+```
+
+If Langfuse credentials are not set, observability is silently disabled and agents run without callbacks. No code changes are required to toggle it on or off.
+
+<Info>
+  The Langfuse host defaults to `https://cloud.langfuse.com`. Override it with `LANGFUSE_HOST` if you are running a self-hosted Langfuse instance.
+</Info>
+
+## AI model reference
+
+| Model | Provider | Used by |
+|-------|----------|---------|
+| `sonar-deep-research` | Perplexity | Enrichment Agent (deep company research) |
+| `sonar-pro` | Perplexity | TopFinder Agent, Report Agent (market research) |
+| `sonar` | Perplexity | Lightweight research tasks |
+| `gpt-4o` | OpenAI | Classifier Agent, Enrichment extraction, Report extraction, TopFinder extraction |
+
+<Tip>
+  Model names are configured in `core/config.py` as `PERPLEXITY_PRO_MODEL`, `SONAR_DEEP_RESEARCH_MODEL`, and `OPENAI_MODEL`. Update them there to switch models across all agents at once.
+</Tip>

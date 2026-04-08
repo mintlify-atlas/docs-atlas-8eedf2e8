@@ -1,0 +1,161 @@
+---
+title: 'Deployment'
+description: 'How to run Mastercad Backend locally with Docker Compose and deploy to AWS Lambda or ECS.'
+keywords: ['deployment', 'docker', 'lambda', 'ecs', 'docker compose']
+---
+
+Mastercad Backend supports two production deployment targets and a local Docker Compose setup for development.
+
+## Prerequisites
+
+Copy the example environment file and fill in the required values before starting any environment.
+
+```bash
+cp env.example .env
+```
+
+<Warning>
+  The following environment variables must be set or the application will refuse to start:
+  `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_JWT_SECRET`, `OPENAI_API_KEY`, and
+  `PERPLEXITY_API_KEY`. See the [Configuration guide](/guides/configuration) for the full
+  variable reference.
+</Warning>
+
+## Local development
+
+<Steps>
+  <Step title="Build and start services">
+    Run Docker Compose from the repository root. This builds the development image and starts both
+    services.
+
+    ```bash
+    docker compose up --build
+    ```
+
+    Two services are started:
+
+    | Service | Description | Default port |
+    | ------- | ----------- | ------------ |
+    | `db` | PostgreSQL 15 with a persistent `postgres_data` volume | `5432` |
+    | `app` | FastAPI application served by Uvicorn | `8000` |
+
+    The `app` service waits for `db` to pass its health check before starting.
+  </Step>
+
+  <Step title="Apply database migrations">
+    Run Alembic migrations inside the running `app` container to create all tables.
+
+    ```bash
+    docker compose exec app alembic upgrade head
+    ```
+  </Step>
+
+  <Step title="Load sample data">
+    Use the development runner script to pull a small set of companies from the Forager API and
+    store them in the database.
+
+    ```bash
+    docker compose exec app python3 scripts/run_dev.py --command discovery --limit 10
+    ```
+
+    The `--limit` flag controls how many company records to fetch. Omit it to use the default of 5.
+  </Step>
+
+  <Step title="Access the API">
+    The API is available at `http://localhost:8000`. Interactive documentation is served at:
+
+    - `http://localhost:8000/docs` — Swagger UI
+    - `http://localhost:8000/redoc` — ReDoc
+  </Step>
+
+  <Step title="Stop the stack">
+    ```bash
+    # Stop containers, keep the Postgres volume
+    docker compose down
+
+    # Stop containers and delete the Postgres volume
+    docker compose down -v
+    ```
+  </Step>
+</Steps>
+
+## Production deployments
+
+The project maintains two separate Dockerfiles and dependency sets for production targets.
+
+<Tabs>
+  <Tab title="Lambda API">
+    The Lambda target uses `Dockerfile` with `requirements-api.txt`. The result is a lightweight
+    image (~200 MB) suitable for low-latency API traffic.
+
+    **What is included:**
+    - FastAPI + Uvicorn
+    - Mangum (Lambda adapter)
+    - python-pptx for report generation
+    - All `requirements-base.txt` dependencies
+
+    **What is excluded:**
+    - Playwright / crawl4ai (browser-based web scraping)
+
+    **Build:**
+
+    ```bash
+    docker build -f Dockerfile -t mc-backend-api .
+    ```
+
+    The image entrypoint is `lambda_handler.handler`. Deploy the image to AWS Lambda using the
+    standard ECR → Lambda workflow.
+
+    <Note>
+      The Dockerfile uses a multi-stage build. The first stage installs Rust to compile `tiktoken`
+      on arm64 hosts. The final stage copies only the installed packages, keeping the image clean.
+    </Note>
+  </Tab>
+
+  <Tab title="ECS ETL">
+    The ECS target uses `Dockerfile.ecs` with `requirements-etl.txt`. This image includes
+    Playwright and crawl4ai for browser-based web scraping and is intended for long-running ETL
+    workloads on ECS Fargate.
+
+    **What is included:**
+    - All `requirements-base.txt` dependencies
+    - crawl4ai for AI-powered web extraction
+    - langchain-community for scraper integrations
+    - Playwright with Chromium
+    - langfuse for observability
+    - ruff for linting
+
+    **Build:**
+
+    ```bash
+    docker build -f Dockerfile.ecs -t mc-backend-etl .
+    ```
+
+    The image entrypoint is `python -m scripts.handler`. Set the `COMMAND` environment variable
+    on the ECS task definition to control which ETL command runs:
+
+    ```bash
+    COMMAND=discovery
+    ```
+
+    Available commands: `classifier`, `discovery`, `process`, `refresh_forager`, `translate`,
+    `test_connection`.
+  </Tab>
+</Tabs>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/guides/configuration">
+    Full reference for every environment variable.
+  </Card>
+  <Card title="Database migrations" icon="database" href="/guides/database-migrations">
+    How to create and apply Alembic migrations.
+  </Card>
+  <Card title="Data ingestion" icon="cloud-download" href="/guides/data-ingestion">
+    Populate the company database after deployment.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/overview">
+    Explore available endpoints.
+  </Card>
+</CardGroup>

@@ -1,0 +1,103 @@
+---
+title: 'Introduction'
+description: 'Mastercad Backend API — fintech company intelligence for firmographic data, AI market research, and presentation export.'
+keywords: ['fintech', 'company intelligence', 'firmographics', 'market research', 'API']
+---
+
+The Mastercad Backend API is a FastAPI service that powers fintech company intelligence. It gives you programmatic access to a curated firmographic database of fintech companies, AI-driven market research generation, and presentation export — all behind a single authenticated REST API.
+
+## What you can do
+
+<CardGroup cols={2}>
+  <Card title="Browse the company database" icon="building" href="/api-reference/companies">
+    Query, filter, and retrieve detailed firmographic profiles for thousands of fintech companies — including funding history, employee counts, subcategories, investors, and office locations.
+  </Card>
+  <Card title="Generate AI market research" icon="chart-bar" href="/api-reference/market-research">
+    Submit a topic and a set of company IDs to produce a structured market research report powered by LangGraph agents and Perplexity Sonar search.
+  </Card>
+  <Card title="Export presentations" icon="presentation" href="/api-reference/market-research">
+    Convert any saved report into a PowerPoint file (.pptx) stored on S3 or a Gamma presentation, with a pre-signed download URL returned in the response.
+  </Card>
+  <Card title="Authenticate securely" icon="lock" href="/authentication">
+    All endpoints are protected by Supabase JWT authentication. Get a token with a single login call and include it in every request.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+The service is split into two deployment targets that share the same codebase:
+
+| Component | Runtime | Purpose |
+|-----------|---------|---------|
+| **API** | AWS Lambda | Handles all HTTP endpoints. Thin image (~200 MB) built from `requirements-api.txt`. |
+| **ETL** | AWS ECS | Runs data collection, firmographic enrichment, and crawler agents. Full image with Playwright/crawl4ai built from `requirements-etl.txt`. |
+
+Both components connect to the same PostgreSQL 15 database. Locally, both run in Docker via `docker compose`.
+
+```
+api/
+├── routes/       # REST endpoints (auth, companies, market research, health)
+├── services/     # Business logic
+├── schemas/      # Pydantic request/response models
+└── dependencies.py
+
+agents/
+├── enrichment/          # Firmographic enrichment agent
+├── classifier/          # Fintech category classification
+├── report/              # Market research report generation
+├── topfinder/           # Top companies discovery
+├── bank_classifier/     # Bank vs fintech detection
+├── pptgen/              # PPTX generation
+├── gammagen/            # Gamma presentation generation
+└── vc_fintech_extractor/ # VC portfolio extraction
+
+database/
+├── schemas/datamodels.py  # SQLAlchemy models
+└── connector.py           # DB connection and query helpers
+```
+
+## API overview
+
+The API is versioned under `/v1` and returns a consistent envelope on every response:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440000",
+    "timestamp": "2026-04-08T12:00:00Z",
+    "processing_time_ms": 42
+  },
+  "errors": null
+}
+```
+
+| Route prefix | Description |
+|---|---|
+| `GET /v1/health` | Service health and uptime |
+| `POST /v1/auth/login` | Obtain a Supabase JWT |
+| `GET /v1/auth/me` | Get the current authenticated user |
+| `POST /v1/companies/filter` | Filter companies by firmographic criteria |
+| `GET /v1/companies/{id}` | Get a single company with full detail |
+| `POST /v1/market-research` | Generate a market research report |
+| `POST /v1/market-research/reports/{id}/generate-pptx` | Export a report as PPTX |
+
+Interactive docs (Swagger UI) are available at `http://localhost:8000/docs` when running locally.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Start the service with Docker and make your first API call in minutes.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Learn how to obtain and use your Supabase JWT token.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/overview">
+    Full endpoint documentation with request and response schemas.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Deep dive into the Lambda/ECS split, data flow, and dependency management.
+  </Card>
+</CardGroup>

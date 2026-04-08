@@ -1,0 +1,98 @@
+{
+  "projectType": "api-service",
+  "projectName": "Mastercad Backend API",
+  "projectDescription": "A FastAPI backend service for fintech company intelligence — aggregating firmographic data, AI-driven market research, and presentation generation via REST endpoints backed by PostgreSQL.",
+  "theme": "luma",
+  "primaryColor": "#1A56DB",
+  "lightColor": "#EFF6FF",
+  "darkColor": "#1E3A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/data-model",
+              "concepts/ai-agents"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/deployment",
+              "guides/configuration",
+              "guides/database-migrations",
+              "guides/data-ingestion"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/response-format"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api-reference/health",
+              "api-reference/auth",
+              "api-reference/companies",
+              "api-reference/market-research"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "JWT authentication via Supabase OAuth2",
+    "Company database with firmographic enrichment from Forager API",
+    "AI market research reports using Perplexity Sonar and OpenAI GPT-4o",
+    "PPTX and Gamma presentation generation for market research reports",
+    "Fintech company classifier with category/subcategory taxonomy",
+    "Asynchronous ETL pipeline using crawl4ai and Playwright on ECS",
+    "Structured logging and observability via Langfuse",
+    "Docker-based deployment targeting AWS Lambda (API) and ECS (ETL)"
+  ],
+  "publicApiSurface": [
+    "GET /v1/health",
+    "POST /v1/auth/login",
+    "GET /v1/auth/me",
+    "GET /v1/companies",
+    "POST /v1/companies/filter",
+    "GET /v1/companies/filter",
+    "GET /v1/companies/keywords/search",
+    "GET /v1/companies/{company_id}",
+    "POST /v1/companies/enrich",
+    "POST /v1/companies/add",
+    "POST /v1/companies/suggest-research-topic",
+    "POST /v1/market-research",
+    "GET /v1/market-research/reports",
+    "GET /v1/market-research/reports/{report_id}",
+    "POST /v1/market-research/reports/{report_id}/generate-pptx",
+    "POST /v1/market-research/reports/{report_id}/generate-gamma",
+    "POST /v1/market-research/reports/{report_id}/start-gamma",
+    "GET /v1/market-research/reports/{report_id}/gamma-status/{generation_id}",
+    "POST /v1/market-research/topic",
+    "POST /v1/market-research/top-companies",
+    "POST /v1/market-research/company/enrich",
+    "POST /v1/market-research/vc-fintech-extraction"
+  ]
+}

@@ -1,0 +1,162 @@
+---
+title: 'Authentication'
+description: 'Obtain and use a Supabase JWT to authenticate requests to the Mastercad Backend API.'
+keywords: ['authentication', 'JWT', 'Supabase', 'Bearer token', 'login']
+---
+
+Every endpoint under `/v1/companies` and `/v1/market-research` requires authentication. The API uses [Supabase](https://supabase.com) as its identity provider. When you log in, Supabase issues a signed JWT that you include in the `Authorization` header of every request.
+
+## How to get a token
+
+Call `POST /v1/auth/login` with your Supabase account credentials:
+
+```bash
+curl -s -X POST http://localhost:8000/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "you@example.com",
+    "password": "your-password"
+  }'
+```
+
+**Request body**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | Yes | Your Supabase account email |
+| `password` | string | Yes | Your Supabase account password |
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "v1.abc123def456...",
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "you@example.com",
+      "role": "authenticated"
+    }
+  },
+  "meta": null,
+  "errors": null
+}
+```
+
+Save the `access_token` value — you will use it on every subsequent request.
+
+## How to pass the token
+
+Include the token as a `Bearer` credential in the `Authorization` header:
+
+```bash
+curl -s http://localhost:8000/v1/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+The header format is always:
+
+```
+Authorization: Bearer <access_token>
+```
+
+## Get the current user
+
+`GET /v1/auth/me` returns the identity associated with the token:
+
+```bash
+curl -s http://localhost:8000/v1/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "you@example.com",
+    "role": "authenticated"
+  },
+  "meta": null,
+  "errors": null
+}
+```
+
+This endpoint is useful for verifying that a token is still valid and for retrieving the user ID needed to correlate activity records.
+
+## Token expiry and refresh
+
+<Warning>
+  Access tokens issued by Supabase expire after a short period (typically 1 hour, controlled by your Supabase project settings). Once a token expires, all protected endpoints return `401 Unauthorized`. You must call `POST /v1/auth/login` again, or use the Supabase client library's `refreshSession` method with the `refresh_token` returned at login, to obtain a new access token without asking the user to re-enter their password.
+</Warning>
+
+## Error responses
+
+When authentication fails, the API returns a `401 Unauthorized` response in the standard error envelope:
+
+**Missing or malformed token**
+
+```json
+{
+  "success": false,
+  "data": null,
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp": "2026-04-08T12:00:00Z",
+    "processing_time_ms": 3
+  },
+  "errors": [
+    {
+      "code": "HTTP_ERROR",
+      "message": "Could not validate credentials",
+      "status_code": 401
+    }
+  ]
+}
+```
+
+**Invalid credentials at login**
+
+```json
+{
+  "success": false,
+  "data": null,
+  "meta": {
+    "request_id": "b2c3d4e5-...",
+    "timestamp": "2026-04-08T12:00:01Z",
+    "processing_time_ms": 210
+  },
+  "errors": [
+    {
+      "code": "HTTP_ERROR",
+      "message": "Authentication failed: Invalid login credentials",
+      "status_code": 401
+    }
+  ]
+}
+```
+
+| Scenario | HTTP status | Error message |
+|----------|------------|---------------|
+| No `Authorization` header | `401` | `Could not validate credentials` |
+| Malformed or expired token | `401` | `Invalid authentication credentials: …` |
+| Wrong email or password at login | `401` | `Authentication failed: …` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Make your first authenticated company filter and report generation call.
+  </Card>
+  <Card title="Auth API reference" icon="code" href="/api-reference/auth">
+    Full schema for the login and /me endpoints.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Set up your Supabase credentials in the environment file.
+  </Card>
+  <Card title="API reference" icon="rectangle-list" href="/api-reference/overview">
+    All available endpoints and their authentication requirements.
+  </Card>
+</CardGroup>

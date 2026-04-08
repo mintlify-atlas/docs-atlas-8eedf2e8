@@ -1,0 +1,96 @@
+---
+title: "Health"
+description: "Check the operational status of the Mastercad Backend API and its dependencies."
+---
+
+The health endpoint returns the current status of the API and its connected services. No authentication is required.
+
+## GET /v1/health
+
+Returns service status, API version, and uptime. Use this endpoint to verify the API is reachable and all dependencies are healthy before making other requests.
+
+**Authentication:** None required
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the request completed without error.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Health information for the API instance.
+
+  <Expandable title="data">
+    <ResponseField name="status" type="string" required>
+      Overall health status. `"healthy"` when all services are operational; `"degraded"` when one or more services are unhealthy.
+    </ResponseField>
+
+    <ResponseField name="version" type="string" required>
+      Current API version string (e.g. `"1.0.0"`).
+    </ResponseField>
+
+    <ResponseField name="uptime_seconds" type="integer" required>
+      Number of seconds the API process has been running since last start.
+    </ResponseField>
+
+    <ResponseField name="services" type="object" required>
+      Map of service names to their individual health status strings. Each value is either `"healthy"` or `"unhealthy"`.
+
+      <Expandable title="services">
+        <ResponseField name="database" type="string">
+          PostgreSQL database connection status.
+        </ResponseField>
+        <ResponseField name="llm_service" type="string">
+          LLM/AI service availability status.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  Request metadata included with the response.
+
+  <Expandable title="meta">
+    <ResponseField name="request_id" type="string">
+      Unique identifier for this request (e.g. `"req_1712345678"`).
+    </ResponseField>
+    <ResponseField name="timestamp" type="string">
+      ISO 8601 timestamp of when the response was generated.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8000/v1/health
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "version": "1.0.0",
+    "uptime_seconds": 86423,
+    "services": {
+      "database": "healthy",
+      "llm_service": "healthy"
+    }
+  },
+  "meta": {
+    "request_id": "req_1712345678",
+    "timestamp": "2026-04-08T12:00:00.000Z"
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+<Note>
+  If `status` is `"degraded"`, check the `services` map to identify which dependency is unhealthy before filing a support request.
+</Note>

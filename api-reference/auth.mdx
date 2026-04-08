@@ -1,0 +1,156 @@
+---
+title: "Authentication"
+description: "Obtain Supabase JWT tokens and retrieve the current authenticated user."
+---
+
+The Mastercad Backend API uses Supabase JWT tokens for authentication. Obtain an access token with `POST /v1/auth/login`, then include it as a Bearer token on every subsequent request.
+
+```
+Authorization: Bearer <your_access_token>
+```
+
+For a complete guide to setting up authentication, see [Authentication](/authentication).
+
+---
+
+## POST /v1/auth/login
+
+Exchange an email and password for a Supabase JWT access token and refresh token.
+
+**Authentication:** None required
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  The user's email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's password.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when login succeeded.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Token and user data.
+
+  <Expandable title="data">
+    <ResponseField name="access_token" type="string" required>
+      Short-lived JWT access token. Include this as `Authorization: Bearer <access_token>` on all authenticated requests.
+    </ResponseField>
+
+    <ResponseField name="refresh_token" type="string" required>
+      Long-lived refresh token. Use this to obtain a new access token when the current one expires.
+    </ResponseField>
+
+    <ResponseField name="user" type="object" required>
+      The authenticated Supabase user object.
+
+      <Expandable title="user">
+        <ResponseField name="id" type="string">
+          Unique user identifier (UUID).
+        </ResponseField>
+        <ResponseField name="email" type="string">
+          The user's email address.
+        </ResponseField>
+        <ResponseField name="role" type="string">
+          The user's role (e.g. `"authenticated"`).
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl -X POST http://localhost:8000/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "your-password"
+  }'
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "v1.refresh.token.string...",
+    "user": {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "email": "user@example.com",
+      "role": "authenticated"
+    }
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+---
+
+## GET /v1/auth/me
+
+Return the identity of the currently authenticated user.
+
+**Authentication:** Bearer token required
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the token is valid and the user was found.
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Current user identity.
+
+  <Expandable title="data">
+    <ResponseField name="id" type="string" required>
+      Unique user identifier (UUID) from Supabase.
+    </ResponseField>
+
+    <ResponseField name="email" type="string" required>
+      The user's email address.
+    </ResponseField>
+
+    <ResponseField name="role" type="string" required>
+      The user's role in Supabase (e.g. `"authenticated"`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8000/v1/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+```json Response
+{
+  "success": true,
+  "data": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "email": "user@example.com",
+    "role": "authenticated"
+  },
+  "errors": null
+}
+```
+
+</CodeGroup>
+
+<Note>
+  Tokens issued by Supabase expire after a configurable duration. If you receive a `401 Unauthorized` response, re-authenticate with `POST /v1/auth/login` using your refresh token or credentials.
+</Note>

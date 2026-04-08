@@ -1,0 +1,115 @@
+---
+title: "API overview"
+description: "Base URL, versioning, authentication, and a complete index of every endpoint in the Mastercad Backend API."
+---
+
+The Mastercad Backend API is a FastAPI service that exposes fintech company intelligence through a set of REST endpoints. All endpoints return a [standard response envelope](/api-reference/response-format).
+
+## Base URL
+
+| Environment | Base URL |
+|---|---|
+| Local development | `http://localhost:8000` |
+| Production | AWS Lambda (contact your administrator for the URL) |
+
+All endpoints are prefixed with `/v1`.
+
+## Versioning
+
+The current API version is **v1**. The version is included in every endpoint path — for example, `GET /v1/companies`. Breaking changes will be introduced under a new version prefix.
+
+## Authentication
+
+All endpoints require a valid Supabase JWT token in the `Authorization` header, except:
+
+- `GET /v1/health` — public health check, no token required
+- `POST /v1/auth/login` — used to obtain the token
+
+<Info>
+  See the [Authentication](/authentication) guide for step-by-step instructions on obtaining and using a JWT token.
+</Info>
+
+Pass your token on every protected request:
+
+```bash
+Authorization: Bearer <your_jwt_token>
+```
+
+## CORS
+
+The API allows requests from all origins (`*`). Credentials, all HTTP methods, and all headers are permitted.
+
+## Rate limits
+
+| Resource | Limit |
+|---|---|
+| Market research reports | 200 per calendar month |
+
+When the monthly limit is reached, the API returns `HTTP 429`. The current usage count is included in the error detail message.
+
+<Warning>
+  The 200-report limit is enforced globally across all users. Monitor your usage with `GET /v1/market-research/reports`, which returns `monthly_reports_used` in the response payload.
+</Warning>
+
+## Endpoint index
+
+<CardGroup cols={2}>
+  <Card title="Health" icon="heart-pulse" href="/api-reference/health">
+    Service status and dependency checks
+  </Card>
+  <Card title="Authentication" icon="lock" href="/api-reference/auth">
+    Login and current-user lookup
+  </Card>
+  <Card title="Companies" icon="building" href="/api-reference/companies">
+    Search, filter, enrich, and manage fintech company profiles
+  </Card>
+  <Card title="Market research" icon="chart-bar" href="/api-reference/market-research">
+    Generate reports, export to PPTX or Gamma, and extract VC portfolios
+  </Card>
+</CardGroup>
+
+### Health
+
+| Method | Path | Description | Auth required |
+|---|---|---|---|
+| `GET` | `/v1/health` | Service status and dependency health | No |
+
+### Authentication
+
+| Method | Path | Description | Auth required |
+|---|---|---|---|
+| `POST` | `/v1/auth/login` | Exchange email and password for a JWT token | No |
+| `GET` | `/v1/auth/me` | Return the currently authenticated user | Yes |
+
+### Companies
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/companies` | Return all companies (unpaginated) |
+| `POST` | `/v1/companies/filter` | Filter companies by criteria with pagination |
+| `GET` | `/v1/companies/filter` | Return the set of available filter options |
+| `GET` | `/v1/companies/keywords/search` | Keyword autocomplete search (`?q=`) |
+| `GET` | `/v1/companies/{company_id}` | Retrieve a single company with full detail |
+| `POST` | `/v1/companies/enrich` | Trigger firmographic enrichment for one or more companies |
+| `POST` | `/v1/companies/add` | Search Forager for a company by website and save it |
+| `POST` | `/v1/companies/suggest-research-topic` | AI-suggested research topic from a set of company IDs |
+
+All Companies endpoints require authentication.
+
+### Market research
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/market-research` | Generate a report for 1–5 specific companies on a topic |
+| `GET` | `/v1/market-research/reports` | List all reports with monthly usage count |
+| `GET` | `/v1/market-research/reports/{report_id}` | Get a single report by ID |
+| `POST` | `/v1/market-research/reports/{report_id}/generate-pptx` | Generate or retrieve a PPTX export (presigned URL, valid 24 h) |
+| `POST` | `/v1/market-research/reports/{report_id}/generate-gamma` | Generate or retrieve a Gamma presentation export |
+| `POST` | `/v1/market-research/reports/{report_id}/start-gamma` | Start async Gamma generation and return a `generation_id` |
+| `GET` | `/v1/market-research/reports/{report_id}/gamma-status/{generation_id}` | Poll Gamma generation status |
+| `POST` | `/v1/market-research/topic` | Generate a report by researching a topic end-to-end |
+| `POST` | `/v1/market-research/top-companies` | Find the top companies in a topic without full research |
+| `POST` | `/v1/market-research/company/enrich` | Research a single company and return its detailed profile |
+| `POST` | `/v1/market-research/vc-fintech-extraction` | Extract portfolio companies from a VC firm's website |
+
+All Market Research endpoints require authentication.

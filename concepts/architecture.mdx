@@ -1,0 +1,145 @@
+---
+title: "Architecture"
+description: "How the Mastercad Backend API is structured: deployment targets, API layer, ETL pipeline, and external integrations."
+---
+
+The Mastercad Backend API is split across two independently deployable targets — a lightweight FastAPI service for the REST API and a full-featured ECS container for ETL workloads. This separation keeps the API image small and fast while giving the data pipeline access to browser-based scraping tools.
+
+## Deployment targets
+
+<CardGroup cols={2}>
+  <Card title="Lambda API" icon="bolt" href="/guides/deployment">
+    FastAPI on AWS Lambda. Uses `requirements-api.txt` for a lightweight ~200 MB image — no Playwright or crawl4ai dependencies.
+  </Card>
+  <Card title="ECS ETL" icon="server" href="/guides/data-ingestion">
+    Full container on AWS ECS. Uses `requirements-etl.txt` with crawl4ai and Playwright for browser-based data collection.
+  </Card>
+</CardGroup>
+
+<Note>
+  Local development uses `Dockerfile_dev` with `requirements-etl.txt`, giving you the full dependency set. For API-only work, install `requirements-api.txt` to match the Lambda environment.
+</Note>
+
+## API layer
+
+The API is a FastAPI application defined in `api/main.py`. It registers four route groups, each under the `/v1` prefix:
+
+| Tag | Prefix | Purpose |
+|-----|--------|---------|
+| `health` | `/v1/health` | Health and readiness checks |
+| `auth` | `/v1/auth` | Supabase JWT authentication |
+| `companies` | `/v1/companies` | Company queries, enrichment, classification |
+| `market_research` | `/v1/market-research` | Report generation and presentation export |
+
+### Middleware
+
+Every inbound request passes through a custom HTTP middleware before reaching a route handler:
+
+<Steps>
+  <Step title="Assign request ID">
+    A UUID is generated and stored on `request.state.request_id`. The ID is included in all error responses for tracing.
+  </Step>
+  <Step title="Record start time">
+    `request.state.start_time` is set so processing time can be calculated and returned in the `X-Process-Time` response header.
+  </Step>
+  <Step title="Call next handler">
+    The request is forwarded to the route handler. If an `HTTPException` or unhandled exception is raised, the middleware catches it and returns a structured JSON error response before the client sees a raw 500.
+  </Step>
+  <Step title="Return response">
+    The response is returned with the `X-Process-Time` header appended.
+  </Step>
+</Steps>
+
+Validation errors from Pydantic are caught by a separate `RequestValidationError` handler that formats them in the same `StandardResponse` envelope as all other errors.
+
+### Authentication
+
+Routes that require authentication use Supabase JWT verification. The application needs three environment variables:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-anon-key
+SUPABASE_JWT_SECRET=your-jwt-secret
+```
+
+A client obtains a token via `POST /v1/auth/login` and passes it on subsequent requests as `Authorization: Bearer <token>`.
+
+### Service layer and database
+
+Business logic lives in `api/services/`. Services receive a SQLAlchemy session injected via `api/dependencies.py` and interact with a PostgreSQL database using the `DBConnector` class from `database/connector.py`. All SQLAlchemy models are defined in `database/schemas/datamodels.py`.
+
+The database URL is assembled from five environment variables at startup:
+
+```bash
+POSTGRES_USER=usuario
+POSTGRES_PASSWORD=password
+POSTGRES_DB=mastercad_db
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+```
+
+## ETL layer
+
+The ETL container runs data collection and processing tasks that are too resource-intensive for Lambda:
+
+- **crawl4ai + Playwright** — headless browser scraping for VC portfolio pages and company websites
+- **Forager collector** — pulls company data from the Forager API in paginated batches
+- **Processing pipeline** — runs translate → enrich → classify on raw company records
+
+ETL jobs are triggered via scripts in `scripts/` and can be run directly inside the ECS container or locally:
+
+```bash
+docker compose exec app python3 scripts/run_dev.py --command discovery --limit 10
+```
+
+## External integrations
+
+<CardGroup cols={2}>
+  <Card title="Forager API" icon="database" href="/api-reference/companies">
+    Primary source for raw company data. Provides firmographic records, funding history, and investor relationships. Configured via `FORAGER_API_KEY` and `FORAGER_BASE_URL`.
+  </Card>
+  <Card title="Perplexity Sonar" icon="magnifying-glass" href="/concepts/ai-agents">
+    Powers real-time web research in the Enrichment, TopFinder, and Report agents. Uses `sonar-pro`, `sonar`, and `sonar-deep-research` models depending on the task.
+  </Card>
+  <Card title="OpenAI GPT-4o" icon="sparkles" href="/concepts/ai-agents">
+    Used for structured data extraction and fintech classification. The Classifier Agent uses `gpt-4o` with `structured_output` to assign categories and generate descriptions.
+  </Card>
+  <Card title="Gamma API" icon="presentation-screen" href="/api-reference/market-research">
+    Generates polished presentation decks from structured report data. Exports are stored in S3 and returned as presigned URLs. Configured via `GAMMA_API_KEY` and `GAMMA_TEMPLATE_ID`.
+  </Card>
+  <Card title="AWS S3" icon="cloud" href="/guides/configuration">
+    Stores generated PPTX reports and Gamma exports. Uses two buckets: `market-scan-logos` for company logos and `market-scan-reportes` for report files. Presigned URLs expire after 24 hours by default.
+  </Card>
+  <Card title="Langfuse" icon="chart-line" href="/concepts/ai-agents">
+    Observability platform for tracing LLM calls across all agents. Enabled automatically when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set. Defaults to `https://cloud.langfuse.com`.
+  </Card>
+</CardGroup>
+
+<Info>
+  DeepL is also integrated (`DEEPL_API_KEY`) for translating non-English company descriptions before enrichment and classification.
+</Info>
+
+## Request lifecycle
+
+The following shows how an authenticated API request flows through the system end to end:
+
+<Steps>
+  <Step title="CORS middleware">
+    The `CORSMiddleware` checks the `Origin` header. All origins are permitted by default (`*`).
+  </Step>
+  <Step title="HTTP middleware">
+    A request ID and start timestamp are assigned. The request is forwarded to the route handler.
+  </Step>
+  <Step title="Auth dependency">
+    Protected routes call the Supabase JWT verification dependency. If the token is missing or invalid, a 401 is returned before the service layer is reached.
+  </Step>
+  <Step title="Service layer">
+    Route handlers delegate to service functions in `api/services/`. Services contain the business logic, call external APIs, and interact with the database.
+  </Step>
+  <Step title="Database">
+    Services use SQLAlchemy sessions (via `DBConnector`) to query or write to PostgreSQL. Relationships are loaded eagerly where needed (e.g., `funding_rounds`, `offices`, `investors`).
+  </Step>
+  <Step title="Response">
+    The service returns a Pydantic model. The route handler wraps it in a `StandardResponse` envelope and returns JSON. Processing time is written to the `X-Process-Time` header.
+  </Step>
+</Steps>
